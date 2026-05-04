@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { useUser, useClerk } from '@clerk/clerk-react'
 import { useNavigate } from 'react-router-dom'
-import { Camera, Edit2, Settings, Shield, HelpCircle, LogOut, ChevronRight } from 'lucide-react'
+import { Camera, Edit2, Settings, Shield, HelpCircle, LogOut, ChevronRight, Crown } from 'lucide-react'
+import { useProfileContext } from './AppLayout'
 
 const ALL_MODES = [
   { key: 'conocer', label: 'Solo conocer', emoji: '🗣️', color: '#3B82F6' },
@@ -17,7 +18,8 @@ export function Profile() {
   const { user } = useUser()
   const { signOut } = useClerk()
   const navigate = useNavigate()
-  const savedModes = (user?.unsafeMetadata?.modes as string[]) ?? []
+  const { profile, isSuperAdmin } = useProfileContext()
+  const savedModes = profile?.modes ?? (user?.unsafeMetadata?.modes as string[]) ?? []
   const [activeModes, setActiveModes] = useState<string[]>(savedModes)
   const [editBio, setEditBio] = useState(false)
   const [bio, setBio] = useState('Aquí para vivir la noche 🔥')
@@ -73,10 +75,18 @@ export function Profile() {
       <div className="px-5 pt-16 space-y-5">
         {/* Name */}
         <div>
-          <h1 className="text-white text-2xl font-bold">
-            {user?.firstName ?? 'Tu nombre'}
-            {user?.unsafeMetadata?.age ? `, ${user.unsafeMetadata.age}` : ''}
-          </h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-white text-2xl font-bold">
+              {profile?.name ?? user?.firstName ?? 'Tu nombre'}
+              {profile?.age ? `, ${profile.age}` : ''}
+            </h1>
+            {isSuperAdmin && (
+              <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold"
+                style={{ background: 'linear-gradient(135deg, #E8192C, #7B2FBE)', color: '#fff' }}>
+                <Crown size={10} /> SUPER ADMIN
+              </span>
+            )}
+          </div>
           <p className="text-white/40 text-sm mt-0.5">{user?.primaryEmailAddress?.emailAddress}</p>
         </div>
 

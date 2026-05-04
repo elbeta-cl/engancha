@@ -45,9 +45,15 @@ create table if not exists venues (
   created_at  timestamptz default now()
 );
 
-alter table profiles
-  add constraint if not exists fk_current_venue
-  foreign key (current_venue_id) references venues(id) on delete set null;
+do $$ begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'fk_current_venue'
+  ) then
+    alter table profiles
+      add constraint fk_current_venue
+      foreign key (current_venue_id) references venues(id) on delete set null;
+  end if;
+end $$;
 
 -- =============================================
 -- SECTORS (dentro de cada local)
