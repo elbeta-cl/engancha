@@ -63,7 +63,7 @@ export function Landing() {
 
           <div className="hidden md:flex items-center gap-3">
             <button
-              onClick={() => navigate('/app')}
+              onClick={() => navigate('/sign-up')}
               className="btn-brand px-5 py-2 text-sm"
             >
               Entrar ahora
@@ -94,7 +94,7 @@ export function Landing() {
                 <a href="#features" onClick={() => setMenuOpen(false)} className="py-3 px-4 text-white/70 rounded-xl hover:bg-white/5 cursor-pointer">Features</a>
                 <a href="#testimonials" onClick={() => setMenuOpen(false)} className="py-3 px-4 text-white/70 rounded-xl hover:bg-white/5 cursor-pointer">Testimonios</a>
                 <button
-                  onClick={() => navigate('/app')}
+                  onClick={() => navigate('/sign-up')}
                   className="btn-brand py-3 mt-2 text-center"
                 >
                   Entrar ahora
@@ -188,7 +188,7 @@ export function Landing() {
             className="flex flex-col sm:flex-row gap-3 mt-8 w-full sm:w-auto"
           >
             <button
-              onClick={() => navigate('/app')}
+              onClick={() => navigate('/sign-up')}
               className="btn-brand py-4 px-8 text-base rounded-2xl animate-glow-pulse"
             >
               Engancha ahora 😈
@@ -463,7 +463,7 @@ export function Landing() {
               Descargá Engancha y conocé gente hoy mismo.
             </p>
             <button
-              onClick={() => navigate('/app')}
+              onClick={() => navigate('/sign-up')}
               className="btn-brand py-4 px-10 text-lg rounded-2xl inline-block animate-glow-pulse"
             >
               Empezar ahora 😈
@@ -490,7 +490,7 @@ export function Landing() {
       {/* Sticky mobile CTA */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 p-4 glass border-t border-white/5 z-40">
         <button
-          onClick={() => navigate('/app')}
+          onClick={() => navigate('/sign-up')}
           className="btn-brand w-full py-4 text-base rounded-2xl"
         >
           Engancha ahora 😈

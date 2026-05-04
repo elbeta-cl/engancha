@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
+import { useUser, useClerk } from '@clerk/clerk-react'
+import { useNavigate } from 'react-router-dom'
 import { Camera, Edit2, Settings, Shield, HelpCircle, LogOut, ChevronRight } from 'lucide-react'
 
 const ALL_MODES = [
@@ -12,7 +14,11 @@ const ALL_MODES = [
 ]
 
 export function Profile() {
-  const [activeModes, setActiveModes] = useState(['bailar', 'diablo'])
+  const { user } = useUser()
+  const { signOut } = useClerk()
+  const navigate = useNavigate()
+  const savedModes = (user?.unsafeMetadata?.modes as string[]) ?? []
+  const [activeModes, setActiveModes] = useState<string[]>(savedModes)
   const [editBio, setEditBio] = useState(false)
   const [bio, setBio] = useState('Aquí para vivir la noche 🔥')
 
@@ -39,7 +45,7 @@ export function Profile() {
           <div className="relative">
             <div className="w-24 h-24 rounded-2xl overflow-hidden border-4 border-brand-dark glow-red">
               <img
-                src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200&q=80"
+                src={user?.imageUrl ?? 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200&q=80'}
                 alt="Tu foto"
                 className="w-full h-full object-cover"
               />
@@ -67,8 +73,11 @@ export function Profile() {
       <div className="px-5 pt-16 space-y-5">
         {/* Name */}
         <div>
-          <h1 className="text-white text-2xl font-bold">Tu nombre, 24</h1>
-          <p className="text-white/40 text-sm mt-0.5">engancha.app/tu-perfil</p>
+          <h1 className="text-white text-2xl font-bold">
+            {user?.firstName ?? 'Tu nombre'}
+            {user?.unsafeMetadata?.age ? `, ${user.unsafeMetadata.age}` : ''}
+          </h1>
+          <p className="text-white/40 text-sm mt-0.5">{user?.primaryEmailAddress?.emailAddress}</p>
         </div>
 
         {/* Bio */}
@@ -173,6 +182,7 @@ export function Profile() {
             </button>
           ))}
           <button
+            onClick={() => signOut(() => navigate('/'))}
             className="w-full flex items-center gap-3 px-4 py-4 text-brand-red/70 hover:text-brand-red hover:bg-brand-red/5 transition-all cursor-pointer border-t border-white/5"
           >
             <LogOut size={16} />
