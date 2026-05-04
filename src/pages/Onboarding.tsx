@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ChevronRight, Camera, Check } from 'lucide-react'
 import icon from '../assets/icon.png'
+import { supabase } from '../lib/supabase'
 
 const MODES = [
   { key: 'conocer', label: 'Solo conocer', emoji: '🗣️', color: '#3B82F6' },
@@ -34,16 +35,26 @@ export function Onboarding() {
   }
 
   const finish = async () => {
+    if (!user) return
     setSaving(true)
     try {
-      await user?.update({
+      // 1. Actualizar Clerk
+      await user.update({
         firstName: displayName.trim() || user.firstName || '',
-        unsafeMetadata: {
-          age: age ? parseInt(age) : null,
-          modes: selectedModes,
-          onboarded: true,
-        },
+        unsafeMetadata: { age: age ? parseInt(age) : null, modes: selectedModes, onboarded: true },
       })
+
+      // 2. Crear perfil en Supabase
+      const email = user.primaryEmailAddress?.emailAddress ?? null
+      await supabase.from('profiles').upsert([{
+        clerk_id: user.id,
+        email,
+        name: displayName.trim() || user.firstName || 'Usuario',
+        age: age ? parseInt(age) : null,
+        photos: user.imageUrl ? [user.imageUrl] : [],
+        modes: selectedModes,
+      }] as any, { onConflict: 'clerk_id' })
+
       navigate('/app')
     } catch (e) {
       console.error(e)
