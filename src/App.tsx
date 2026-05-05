@@ -51,6 +51,18 @@ function PublicOnlyRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+// Landing inteligente: si ya está logueado va directo a la app
+function RootRoute() {
+  const { isSignedIn, isLoaded } = useAuth()
+  const { user } = useUser()
+  if (!isLoaded) return <Spinner />
+  if (isSignedIn) {
+    const onboarded = user?.unsafeMetadata?.onboarded === true
+    return <Navigate to={onboarded ? '/app' : '/onboarding'} replace />
+  }
+  return <Landing />
+}
+
 // ClerkProvider must be inside BrowserRouter to access useNavigate
 function ClerkProviderWithRouter({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate()
@@ -73,7 +85,7 @@ function AppRoutes() {
     <AnimatePresence mode="wait">
       <Routes>
         {/* Public */}
-        <Route path="/" element={<Landing />} />
+        <Route path="/" element={<RootRoute />} />
 
         {/* Auth — wildcard paths for Clerk's internal sub-routing */}
         <Route path="/sign-in/*" element={<PublicOnlyRoute><AuthPage mode="sign-in" /></PublicOnlyRoute>} />

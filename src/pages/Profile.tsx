@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { useUser, useClerk } from '@clerk/clerk-react'
 import { useNavigate } from 'react-router-dom'
 import { Camera, Edit2, Settings, Shield, HelpCircle, LogOut, ChevronRight, Crown, Loader2, AlertCircle } from 'lucide-react'
@@ -19,7 +19,7 @@ const ALL_MODES = [
 export function Profile() {
   const { user } = useUser()
   const { signOut } = useClerk()
-  const navigate = useNavigate()
+  useNavigate() // keep router context active
   const { profile, isSuperAdmin, refreshProfile } = useProfileContext()
 
   const [avatarUrl, setAvatarUrl] = useState('')
@@ -33,9 +33,15 @@ export function Profile() {
   const [savingBio, setSavingBio] = useState(false)
 
   const [activeModes, setActiveModes] = useState<string[]>([])
+  const [toast, setToast] = useState('')
 
   const avatarInputRef = useRef<HTMLInputElement>(null)
   const coverInputRef = useRef<HTMLInputElement>(null)
+
+  const showToast = (msg: string) => {
+    setToast(msg)
+    setTimeout(() => setToast(''), 2500)
+  }
 
   useEffect(() => {
     if (profile) {
@@ -354,12 +360,13 @@ export function Profile() {
         {/* Settings menu */}
         <div className="card-dark overflow-hidden">
           {[
-            { icon: Settings, label: 'Configuración' },
-            { icon: Shield, label: 'Privacidad' },
-            { icon: HelpCircle, label: 'Ayuda' },
-          ].map(({ icon: Icon, label }, i) => (
+            { icon: Settings,    label: 'Configuración', action: () => showToast('Configuración próximamente ⚙️') },
+            { icon: Shield,      label: 'Privacidad',    action: () => showToast('Política de privacidad próximamente 🔒') },
+            { icon: HelpCircle,  label: 'Ayuda',         action: () => showToast('¿Dudas? Escríbenos a hola@engancha.app 💬') },
+          ].map(({ icon: Icon, label, action }, i) => (
             <button
               key={label}
+              onClick={action}
               className={`w-full flex items-center gap-3 px-4 py-4 text-white/70 hover:text-white hover:bg-white/5 transition-all cursor-pointer ${i > 0 ? 'border-t border-white/5' : ''}`}
             >
               <Icon size={16} />
@@ -368,13 +375,30 @@ export function Profile() {
             </button>
           ))}
           <button
-            onClick={() => signOut(() => navigate('/'))}
+            onClick={() => signOut()}
             className="w-full flex items-center gap-3 px-4 py-4 text-brand-red/70 hover:text-brand-red hover:bg-brand-red/5 transition-all cursor-pointer border-t border-white/5"
           >
             <LogOut size={16} />
             <span className="flex-1 text-sm text-left">Cerrar sesión</span>
           </button>
         </div>
+
+        {/* Toast */}
+        <AnimatePresence>
+          {toast && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 10 }}
+              className="fixed bottom-28 left-4 right-4 z-50 flex justify-center pointer-events-none"
+            >
+              <div className="glass rounded-2xl px-5 py-3 text-white text-sm font-medium shadow-xl max-w-xs text-center"
+                style={{ border: '1px solid rgba(255,255,255,0.1)' }}>
+                {toast}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   )
