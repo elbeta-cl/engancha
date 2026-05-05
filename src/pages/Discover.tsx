@@ -1,6 +1,6 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Globe, MapPin, X, Heart, Zap } from 'lucide-react'
+import { Globe, MapPin, X, Heart, Zap, Star } from 'lucide-react'
 import { SwipeCard } from '../components/SwipeCard'
 import { MatchCelebration } from '../components/MatchCelebration'
 import type { UserProfile, DiscoverMode } from '../types'
@@ -55,6 +55,10 @@ export function Discover() {
   const [showMatch, setShowMatch] = useState(false)
   const [matchProfile, setMatchProfile] = useState<UserProfile | null>(null)
   const [fastMode, setFastMode] = useState(false)
+  const [superLikesLeft, setSuperLikesLeft] = useState(3)
+  const [superLikeActive, setSuperLikeActive] = useState(false)
+  const [superLikeToast, setSuperLikeToast] = useState<string | null>(null)
+  const superLikeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const handleLike = useCallback(() => {
     const liked = profiles[profiles.length - 1]
@@ -68,6 +72,26 @@ export function Discover() {
   const handleNope = useCallback(() => {
     setProfiles((prev) => prev.slice(0, -1))
   }, [])
+
+  const handleSuperLike = useCallback(() => {
+    if (superLikesLeft <= 0 || superLikeActive) return
+    const profile = profiles[profiles.length - 1]
+    if (!profile) return
+
+    setSuperLikesLeft((n) => n - 1)
+    setSuperLikeActive(true)
+    setSuperLikeToast(profile.name)
+
+    if (superLikeTimerRef.current) clearTimeout(superLikeTimerRef.current)
+    superLikeTimerRef.current = setTimeout(() => {
+      setSuperLikeActive(false)
+      setSuperLikeToast(null)
+      // Super like always creates a match
+      setProfiles((prev) => prev.slice(0, -1))
+      setMatchProfile(profile)
+      setShowMatch(true)
+    }, 900)
+  }, [superLikesLeft, superLikeActive, profiles])
 
   const currentProfile = profiles[profiles.length - 1]
   const nextProfile = profiles[profiles.length - 2]
@@ -167,6 +191,28 @@ export function Discover() {
                 )}
               </AnimatePresence>
             </div>
+
+            {/* Super Like stamp overlay */}
+            <AnimatePresence>
+              {superLikeActive && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.5 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 1.2 }}
+                  transition={{ type: 'spring', stiffness: 400, damping: 20 }}
+                  className="absolute inset-0 flex items-center justify-center pointer-events-none"
+                  style={{ zIndex: 20 }}
+                >
+                  <div className="rotate-[-12deg] border-4 border-amber-400 rounded-2xl px-5 py-2 shadow-2xl"
+                    style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}>
+                    <span className="text-amber-400 font-black text-3xl tracking-widest flex items-center gap-2">
+                      <Star size={28} fill="rgb(251,191,36)" />
+                      SUPER
+                    </span>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         )}
       </div>
@@ -197,12 +243,24 @@ export function Discover() {
           </motion.button>
 
           <motion.button
-            whileTap={{ scale: 0.85 }}
-            onClick={() => {}}
-            className="w-14 h-14 rounded-full flex items-center justify-center cursor-pointer border border-white/15 bg-white/5 transition-all"
-            aria-label="Guardar"
+            whileTap={superLikesLeft > 0 ? { scale: 0.85 } : {}}
+            onClick={handleSuperLike}
+            disabled={superLikesLeft <= 0 || superLikeActive}
+            className="w-14 h-14 rounded-full flex items-center justify-center cursor-pointer border transition-all relative disabled:opacity-40"
+            style={superLikesLeft > 0
+              ? { borderColor: 'rgba(251,191,36,0.4)', background: 'rgba(251,191,36,0.08)' }
+              : { borderColor: 'rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.05)' }
+            }
+            aria-label="Super Engancha"
           >
-            <span className="text-xl">⭐</span>
+            <Star size={22} className={superLikesLeft > 0 ? 'text-amber-400' : 'text-white/30'}
+              fill={superLikesLeft > 0 ? 'rgba(251,191,36,0.3)' : 'none'} />
+            {superLikesLeft > 0 && (
+              <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full text-black text-[9px] font-black flex items-center justify-center"
+                style={{ background: '#fbbf24' }}>
+                {superLikesLeft}
+              </span>
+            )}
           </motion.button>
         </div>
       )}
@@ -220,6 +278,28 @@ export function Discover() {
               <div className="glass-strong rounded-2xl px-6 py-3 flex items-center gap-3">
                 <Zap size={16} className="text-brand-red" />
                 <span className="text-white font-bold">30s — Rondas rápidas</span>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Super Like toast */}
+      <AnimatePresence>
+        {superLikeToast && (
+          <motion.div
+            initial={{ opacity: 0, y: 40 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+            className="fixed bottom-36 left-0 right-0 flex justify-center z-50 pointer-events-none px-6"
+          >
+            <div className="rounded-2xl px-5 py-3 flex items-center gap-3 shadow-2xl"
+              style={{ background: 'rgba(20,20,20,0.95)', border: '1px solid rgba(251,191,36,0.4)', backdropFilter: 'blur(12px)' }}>
+              <Star size={20} className="text-amber-400 flex-shrink-0" fill="rgb(251,191,36)" />
+              <div>
+                <p className="text-white font-bold text-sm">Super Engancha enviado</p>
+                <p className="text-amber-400/80 text-xs">{superLikeToast} lo verá primero ✨</p>
               </div>
             </div>
           </motion.div>
