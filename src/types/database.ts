@@ -8,6 +8,7 @@ export interface Profile {
   age: number | null
   bio: string | null
   photos: string[]
+  cover_photo: string | null
   modes: string[]
   role: UserRole
   current_venue_id: string | null
