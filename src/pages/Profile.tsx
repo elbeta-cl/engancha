@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom'
 import { Camera, Edit2, Settings, Shield, HelpCircle, LogOut, ChevronRight, Crown, Loader2, AlertCircle } from 'lucide-react'
 import { useProfileContext } from './AppLayout'
 import { supabase } from '../lib/supabase'
+import { compressImage } from '../lib/compressImage'
 
 const ALL_MODES = [
   { key: 'conocer', label: 'Solo conocer', emoji: '🗣️', color: '#3B82F6' },
@@ -51,12 +52,12 @@ export function Profile() {
     if (!user) return null
     setUploadError('')
 
-    const ext = file.name.split('.').pop()?.toLowerCase() ?? 'jpg'
-    const path = `${user.id}/${prefix}_${Date.now()}.${ext}`
+    const compressed = await compressImage(file).catch(() => file)
+    const path = `${user.id}/${prefix}_${Date.now()}.jpg`
 
     const { error } = await supabase.storage
       .from('photos')
-      .upload(path, file, { cacheControl: '3600', upsert: true })
+      .upload(path, compressed, { contentType: 'image/jpeg', cacheControl: '3600', upsert: true })
 
     if (error) {
       console.error('Storage upload error:', error)

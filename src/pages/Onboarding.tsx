@@ -5,6 +5,7 @@ import { motion, AnimatePresence, Reorder } from 'framer-motion'
 import { ChevronRight, Camera, X, GripVertical, ImagePlus } from 'lucide-react'
 import icon from '../assets/icon.png'
 import { supabase } from '../lib/supabase'
+import { compressImage } from '../lib/compressImage'
 
 const MODES = [
   { key: 'conocer', label: 'Solo conocer', emoji: '🗣️', color: '#3B82F6' },
@@ -56,12 +57,12 @@ export function Onboarding() {
     setUploading(true)
 
     try {
-      const ext = file.name.split('.').pop()?.toLowerCase() ?? 'jpg'
-      const path = `${user.id}/${Date.now()}.${ext}`
+      const compressed = await compressImage(file).catch(() => file)
+      const path = `${user.id}/${Date.now()}.jpg`
 
       const { error } = await supabase.storage
         .from('photos')
-        .upload(path, file, { cacheControl: '3600', upsert: false })
+        .upload(path, compressed, { contentType: 'image/jpeg', cacheControl: '3600', upsert: false })
 
       if (error) throw error
 
