@@ -1,5 +1,5 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { useAuth, useUser } from '@clerk/clerk-react'
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
+import { ClerkProvider, useAuth, useUser } from '@clerk/clerk-react'
 import { AnimatePresence } from 'framer-motion'
 import { Landing } from './pages/Landing'
 import { AppLayout } from './pages/AppLayout'
@@ -11,6 +11,10 @@ import { Radar } from './pages/Radar'
 import { Profile } from './pages/Profile'
 import { AuthPage } from './pages/AuthPage'
 import { Onboarding } from './pages/Onboarding'
+
+const PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
+
+if (!PUBLISHABLE_KEY) throw new Error('Missing VITE_CLERK_PUBLISHABLE_KEY')
 
 const Spinner = () => (
   <div className="min-h-dvh bg-brand-dark flex items-center justify-center">
@@ -30,10 +34,7 @@ function ProtectedRoute({ children, requireOnboarding = true }: {
 
   const onboarded = user?.unsafeMetadata?.onboarded === true
 
-  // Si requiere onboarding completo y no lo hizo → onboarding
   if (requireOnboarding && !onboarded) return <Navigate to="/onboarding" replace />
-
-  // Si ya está onboarded y va a /onboarding → app
   if (!requireOnboarding && onboarded) return <Navigate to="/app" replace />
 
   return <>{children}</>
@@ -42,7 +43,7 @@ function ProtectedRoute({ children, requireOnboarding = true }: {
 function PublicOnlyRoute({ children }: { children: React.ReactNode }) {
   const { isSignedIn, isLoaded } = useAuth()
   const { user } = useUser()
-  if (!isLoaded) return null
+  if (!isLoaded) return <Spinner />
   if (isSignedIn) {
     const onboarded = user?.unsafeMetadata?.onboarded === true
     return <Navigate to={onboarded ? '/app' : '/onboarding'} replace />
@@ -50,34 +51,59 @@ function PublicOnlyRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+// ClerkProvider must be inside BrowserRouter to access useNavigate
+function ClerkProviderWithRouter({ children }: { children: React.ReactNode }) {
+  const navigate = useNavigate()
+  return (
+    <ClerkProvider
+      publishableKey={PUBLISHABLE_KEY}
+      routerPush={(to) => navigate(to)}
+      routerReplace={(to) => navigate(to, { replace: true })}
+      afterSignOutUrl="/"
+      afterSignInUrl="/app"
+      afterSignUpUrl="/onboarding"
+    >
+      {children}
+    </ClerkProvider>
+  )
+}
+
+function AppRoutes() {
+  return (
+    <AnimatePresence mode="wait">
+      <Routes>
+        {/* Public */}
+        <Route path="/" element={<Landing />} />
+
+        {/* Auth — wildcard paths for Clerk's internal sub-routing */}
+        <Route path="/sign-in/*" element={<PublicOnlyRoute><AuthPage mode="sign-in" /></PublicOnlyRoute>} />
+        <Route path="/sign-up/*" element={<PublicOnlyRoute><AuthPage mode="sign-up" /></PublicOnlyRoute>} />
+
+        {/* Onboarding */}
+        <Route path="/onboarding" element={<ProtectedRoute requireOnboarding={false}><Onboarding /></ProtectedRoute>} />
+
+        {/* App */}
+        <Route path="/app" element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
+          <Route index element={<AppHome />} />
+          <Route path="discover" element={<Discover />} />
+          <Route path="chats" element={<Chats />} />
+          <Route path="chat/:matchId" element={<Chat />} />
+          <Route path="radar" element={<Radar />} />
+          <Route path="profile" element={<Profile />} />
+        </Route>
+
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </AnimatePresence>
+  )
+}
+
 export default function App() {
   return (
     <BrowserRouter>
-      <AnimatePresence mode="wait">
-        <Routes>
-          {/* Public */}
-          <Route path="/" element={<Landing />} />
-
-          {/* Auth — solo para no autenticados */}
-          <Route path="/sign-in" element={<PublicOnlyRoute><AuthPage mode="sign-in" /></PublicOnlyRoute>} />
-          <Route path="/sign-up" element={<PublicOnlyRoute><AuthPage mode="sign-up" /></PublicOnlyRoute>} />
-
-          {/* Onboarding — solo si está autenticado pero no onboarded */}
-          <Route path="/onboarding" element={<ProtectedRoute requireOnboarding={false}><Onboarding /></ProtectedRoute>} />
-
-          {/* App — autenticado + onboarding completo */}
-          <Route path="/app" element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
-            <Route index element={<AppHome />} />
-            <Route path="discover" element={<Discover />} />
-            <Route path="chats" element={<Chats />} />
-            <Route path="chat/:matchId" element={<Chat />} />
-            <Route path="radar" element={<Radar />} />
-            <Route path="profile" element={<Profile />} />
-          </Route>
-
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </AnimatePresence>
+      <ClerkProviderWithRouter>
+        <AppRoutes />
+      </ClerkProviderWithRouter>
     </BrowserRouter>
   )
 }

@@ -41,7 +41,7 @@ export function AuthPage({ mode }: Props) {
               routing="path"
               path="/sign-in"
               signUpUrl="/sign-up"
-              forceRedirectUrl="/app"
+              fallbackRedirectUrl="/app"
               appearance={{
                 variables: {
                   colorPrimary: '#E8192C',
@@ -75,7 +75,7 @@ export function AuthPage({ mode }: Props) {
               routing="path"
               path="/sign-up"
               signInUrl="/sign-in"
-              forceRedirectUrl="/onboarding"
+              fallbackRedirectUrl="/onboarding"
               appearance={{
                 variables: {
                   colorPrimary: '#E8192C',
