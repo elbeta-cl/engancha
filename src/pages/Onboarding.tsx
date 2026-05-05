@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useUser } from '@clerk/clerk-react'
 import { useNavigate } from 'react-router-dom'
-import { motion, AnimatePresence } from 'framer-motion'
-import { ChevronRight, Camera, Check } from 'lucide-react'
+import { motion, AnimatePresence, Reorder } from 'framer-motion'
+import { ChevronRight, Camera, X, GripVertical, ImagePlus } from 'lucide-react'
 import icon from '../assets/icon.png'
 import { supabase } from '../lib/supabase'
 
@@ -15,14 +15,21 @@ const MODES = [
   { key: 'after', label: 'El after', emoji: '🌙', color: '#7B2FBE' },
 ]
 
+type Photo = { id: string; url: string }
+
 export function Onboarding() {
   const { user } = useUser()
   const navigate = useNavigate()
   const [step, setStep] = useState(0)
   const [displayName, setDisplayName] = useState(user?.firstName ?? '')
   const [age, setAge] = useState('')
+  const [photos, setPhotos] = useState<Photo[]>([])
+  const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState('')
   const [selectedModes, setSelectedModes] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const pendingSlotRef = useRef<number>(0)
 
   const steps = ['Tu nombre', 'Tus fotos', 'Tus modos']
 
@@ -34,24 +41,93 @@ export function Onboarding() {
     }
   }
 
+  const openFilePicker = (slotIndex: number) => {
+    if (photos.length >= 3) return
+    pendingSlotRef.current = slotIndex
+    fileInputRef.current?.click()
+  }
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || !user) return
+    e.target.value = ''
+
+    setUploadError('')
+    setUploading(true)
+
+    try {
+      const ext = file.name.split('.').pop()?.toLowerCase() ?? 'jpg'
+      const path = `${user.id}/${Date.now()}.${ext}`
+
+      const { error } = await supabase.storage
+        .from('photos')
+        .upload(path, file, { cacheControl: '3600', upsert: false })
+
+      if (error) throw error
+
+      const { data } = supabase.storage.from('photos').getPublicUrl(path)
+      const id = path
+
+      setPhotos((prev) => [...prev, { id, url: data.publicUrl }].slice(0, 3))
+    } catch (err: any) {
+      console.error(err)
+      setUploadError('No se pudo subir la foto. Verifica que el bucket "photos" exista en Supabase con acceso público.')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const importClerkPhoto = async () => {
+    if (!user?.imageUrl || photos.length >= 3) return
+    setUploadError('')
+    setUploading(true)
+    try {
+      const res = await fetch(user.imageUrl)
+      const blob = await res.blob()
+      const ext = 'jpg'
+      const path = `${user.id}/${Date.now()}.${ext}`
+
+      const { error } = await supabase.storage
+        .from('photos')
+        .upload(path, blob, { contentType: 'image/jpeg', cacheControl: '3600', upsert: false })
+
+      if (error) throw error
+
+      const { data } = supabase.storage.from('photos').getPublicUrl(path)
+      setPhotos((prev) => [...prev, { id: path, url: data.publicUrl }].slice(0, 3))
+    } catch (err: any) {
+      console.error(err)
+      // Fallback: just use the clerk URL directly
+      const id = `clerk_${Date.now()}`
+      setPhotos((prev) => [...prev, { id, url: user.imageUrl! }].slice(0, 3))
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const removePhoto = (id: string) => {
+    setPhotos((prev) => prev.filter((p) => p.id !== id))
+  }
+
   const finish = async () => {
     if (!user) return
     setSaving(true)
     try {
-      // 1. Actualizar Clerk
+      const photoUrls = photos.map((p) => p.url)
+      const finalPhotos = photoUrls.length > 0 ? photoUrls : (user.imageUrl ? [user.imageUrl] : [])
+
       await user.update({
         firstName: displayName.trim() || user.firstName || '',
         unsafeMetadata: { age: age ? parseInt(age) : null, modes: selectedModes, onboarded: true },
       })
 
-      // 2. Crear perfil en Supabase
       const email = user.primaryEmailAddress?.emailAddress ?? null
       await supabase.from('profiles').upsert([{
         clerk_id: user.id,
         email,
         name: displayName.trim() || user.firstName || 'Usuario',
         age: age ? parseInt(age) : null,
-        photos: user.imageUrl ? [user.imageUrl] : [],
+        photos: finalPhotos,
         modes: selectedModes,
       }] as any, { onConflict: 'clerk_id' })
 
@@ -68,8 +144,18 @@ export function Onboarding() {
     ? true
     : selectedModes.length > 0
 
+  const emptySlots = Math.max(0, 3 - photos.length)
+
   return (
     <div className="min-h-dvh bg-brand-dark flex flex-col">
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleFileChange}
+      />
+
       {/* Header */}
       <div className="flex items-center justify-between px-5 pt-12 pb-6">
         <img src={icon} alt="Engancha" className="w-8 h-8" />
@@ -90,7 +176,7 @@ export function Onboarding() {
         <span className="text-white/30 text-sm">{step + 1}/{steps.length}</span>
       </div>
 
-      <div className="flex-1 px-5">
+      <div className="flex-1 px-5 overflow-y-auto">
         <AnimatePresence mode="wait">
           {/* Step 0 — Nombre */}
           {step === 0 && (
@@ -147,39 +233,107 @@ export function Onboarding() {
               <h1 className="font-display text-3xl font-black text-white mb-2" style={{ letterSpacing: '-0.03em' }}>
                 Tus fotos
               </h1>
-              <p className="text-white/40 text-sm mb-8">Mínimo 1, máximo 3. Sin avatares por defecto.</p>
+              <p className="text-white/40 text-sm mb-6">
+                Máximo 3. <span className="text-white/25">Mantén y arrastra para reordenar.</span>
+              </p>
 
-              <div className="grid grid-cols-3 gap-3">
-                {[0, 1, 2].map((i) => (
-                  <div
-                    key={i}
-                    className={`aspect-[3/4] rounded-2xl flex flex-col items-center justify-center cursor-pointer transition-all ${
-                      i === 0
-                        ? 'border-2 border-dashed border-brand-red/50 bg-brand-red/5'
-                        : 'border border-dashed border-white/10 bg-white/3'
-                    }`}
-                  >
-                    <Camera size={20} className={i === 0 ? 'text-brand-red' : 'text-white/20'} />
-                    <span className={`text-xs mt-1.5 ${i === 0 ? 'text-brand-red' : 'text-white/20'}`}>
-                      {i === 0 ? 'Principal' : `Foto ${i + 1}`}
-                    </span>
+              {/* Uploaded photos — drag to reorder */}
+              {photos.length > 0 && (
+                <Reorder.Group
+                  axis="y"
+                  values={photos}
+                  onReorder={setPhotos}
+                  className="space-y-3 mb-3"
+                >
+                  {photos.map((photo, i) => (
+                    <Reorder.Item
+                      key={photo.id}
+                      value={photo}
+                      className="flex items-center gap-3 glass rounded-2xl overflow-hidden cursor-grab active:cursor-grabbing"
+                      style={{ touchAction: 'none' }}
+                      whileDrag={{ scale: 1.02, boxShadow: '0 8px 32px rgba(232,25,44,0.3)' }}
+                    >
+                      <div className="relative w-16 h-16 flex-shrink-0 overflow-hidden rounded-l-2xl">
+                        <img src={photo.url} alt="" className="w-full h-full object-cover" />
+                        {i === 0 && (
+                          <div className="absolute bottom-0 left-0 right-0 text-[9px] font-bold text-white text-center py-0.5"
+                            style={{ background: 'linear-gradient(135deg, #E8192C, #E91E8C)' }}>
+                            PRINCIPAL
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-white text-sm font-medium">
+                          {i === 0 ? 'Foto principal' : `Foto ${i + 1}`}
+                        </p>
+                        <p className="text-white/30 text-xs">Arrastra para reordenar</p>
+                      </div>
+                      <div className="flex items-center gap-2 pr-3">
+                        <button
+                          onPointerDown={(e) => e.stopPropagation()}
+                          onClick={(e) => { e.stopPropagation(); removePhoto(photo.id) }}
+                          className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center cursor-pointer"
+                        >
+                          <X size={14} className="text-white/60" />
+                        </button>
+                        <GripVertical size={18} className="text-white/20" />
+                      </div>
+                    </Reorder.Item>
+                  ))}
+                </Reorder.Group>
+              )}
+
+              {/* Empty slots */}
+              {photos.length < 3 && (
+                <div className={`grid gap-3 mb-4 ${emptySlots === 3 ? 'grid-cols-3' : emptySlots === 2 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                  {Array.from({ length: emptySlots }).map((_, i) => (
+                    <motion.button
+                      key={i}
+                      whileTap={{ scale: 0.96 }}
+                      onClick={() => openFilePicker(photos.length + i)}
+                      disabled={uploading}
+                      className="aspect-[3/4] rounded-2xl flex flex-col items-center justify-center cursor-pointer transition-all border-2 border-dashed border-white/15 bg-white/3 hover:border-brand-red/40 hover:bg-brand-red/5 disabled:opacity-50"
+                    >
+                      {uploading && i === 0 ? (
+                        <div className="w-6 h-6 rounded-full border-2 border-white/20 border-t-brand-red animate-spin" />
+                      ) : (
+                        <>
+                          <Camera size={22} className="text-white/25 mb-1.5" />
+                          <span className="text-white/25 text-xs">Agregar</span>
+                        </>
+                      )}
+                    </motion.button>
+                  ))}
+                </div>
+              )}
+
+              {/* Error */}
+              {uploadError && (
+                <p className="text-red-400 text-xs mb-4 text-center">{uploadError}</p>
+              )}
+
+              {/* Import from Clerk */}
+              {user?.imageUrl && photos.length < 3 && (
+                <motion.button
+                  whileTap={{ scale: 0.97 }}
+                  onClick={importClerkPhoto}
+                  disabled={uploading}
+                  className="w-full glass rounded-2xl p-3 flex items-center gap-3 cursor-pointer disabled:opacity-50"
+                >
+                  <div className="w-10 h-10 rounded-xl overflow-hidden flex-shrink-0">
+                    <img src={user.imageUrl} alt="" className="w-full h-full object-cover" />
                   </div>
-                ))}
-              </div>
+                  <div className="flex-1 text-left">
+                    <p className="text-white text-sm font-medium">Importar foto de perfil</p>
+                    <p className="text-white/35 text-xs">Usar tu foto actual de Google</p>
+                  </div>
+                  <ImagePlus size={16} className="text-white/30 flex-shrink-0" />
+                </motion.button>
+              )}
 
-              <div className="mt-4 glass rounded-2xl p-3 flex items-center gap-3">
-                <div className="w-8 h-8 rounded-xl overflow-hidden flex-shrink-0">
-                  <img src={user?.imageUrl} alt="" className="w-full h-full object-cover" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-white text-sm font-medium">Usar foto de Google</p>
-                  <p className="text-white/40 text-xs">Ya tenemos tu foto de perfil</p>
-                </div>
-                <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0"
-                  style={{ background: 'linear-gradient(135deg, #E8192C, #E91E8C)' }}>
-                  <Check size={12} className="text-white" />
-                </div>
-              </div>
+              {photos.length === 0 && (
+                <p className="text-white/20 text-xs text-center mt-4">Puedes continuar sin fotos</p>
+              )}
             </motion.div>
           )}
 
@@ -240,7 +394,7 @@ export function Onboarding() {
             if (step < steps.length - 1) setStep((s) => s + 1)
             else finish()
           }}
-          disabled={!canNext || saving}
+          disabled={!canNext || saving || uploading}
           className="w-full py-4 rounded-2xl font-semibold text-white flex items-center justify-center gap-2 transition-all disabled:opacity-30 cursor-pointer"
           style={{ background: 'linear-gradient(135deg, #E8192C, #E91E8C)' }}
         >
