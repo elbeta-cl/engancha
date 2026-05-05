@@ -10,10 +10,12 @@ interface ProfileCtx {
   loading: boolean
   isAdmin: boolean
   isSuperAdmin: boolean
+  refreshProfile: () => Promise<void>
 }
 
 export const ProfileContext = createContext<ProfileCtx>({
   profile: null, loading: true, isAdmin: false, isSuperAdmin: false,
+  refreshProfile: async () => {},
 })
 
 export const useProfileContext = () => useContext(ProfileContext)

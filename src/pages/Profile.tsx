@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { useUser, useClerk } from '@clerk/clerk-react'
 import { useNavigate } from 'react-router-dom'
-import { Camera, Edit2, Settings, Shield, HelpCircle, LogOut, ChevronRight, Crown, Loader2 } from 'lucide-react'
+import { Camera, Edit2, Settings, Shield, HelpCircle, LogOut, ChevronRight, Crown, Loader2, AlertCircle } from 'lucide-react'
 import { useProfileContext } from './AppLayout'
 import { supabase } from '../lib/supabase'
 
@@ -19,12 +19,13 @@ export function Profile() {
   const { user } = useUser()
   const { signOut } = useClerk()
   const navigate = useNavigate()
-  const { profile, isSuperAdmin } = useProfileContext()
+  const { profile, isSuperAdmin, refreshProfile } = useProfileContext()
 
   const [avatarUrl, setAvatarUrl] = useState('')
   const [coverUrl, setCoverUrl] = useState('')
   const [uploadingAvatar, setUploadingAvatar] = useState(false)
   const [uploadingCover, setUploadingCover] = useState(false)
+  const [uploadError, setUploadError] = useState('')
 
   const [bio, setBio] = useState('')
   const [editBio, setEditBio] = useState(false)
@@ -44,16 +45,31 @@ export function Profile() {
     } else if (user) {
       setAvatarUrl(user.imageUrl || '')
     }
-  }, [profile, user?.imageUrl])
+  }, [profile?.id, user?.imageUrl])
 
   const uploadToStorage = async (file: File, prefix: string): Promise<string | null> => {
     if (!user) return null
+    setUploadError('')
+
     const ext = file.name.split('.').pop()?.toLowerCase() ?? 'jpg'
     const path = `${user.id}/${prefix}_${Date.now()}.${ext}`
+
     const { error } = await supabase.storage
       .from('photos')
       .upload(path, file, { cacheControl: '3600', upsert: true })
-    if (error) { console.error('Storage error:', error); return null }
+
+    if (error) {
+      console.error('Storage upload error:', error)
+      if (error.message?.includes('Bucket not found') || error.message?.includes('bucket')) {
+        setUploadError('El bucket "photos" no existe en Supabase Storage. Créalo como público.')
+      } else if (error.message?.includes('policy') || error.message?.includes('permission') || error.message?.includes('not allowed')) {
+        setUploadError('Sin permisos para subir. Agrega una política INSERT al bucket "photos".')
+      } else {
+        setUploadError(`Error al subir: ${error.message}`)
+      }
+      return null
+    }
+
     return supabase.storage.from('photos').getPublicUrl(path).data.publicUrl
   }
 
@@ -62,14 +78,23 @@ export function Profile() {
     if (!file || !user) return
     e.target.value = ''
     setUploadingAvatar(true)
+
     const url = await uploadToStorage(file, 'avatar')
     if (url) {
-      setAvatarUrl(url)
       const rest = (profile?.photos ?? []).slice(1)
-      await supabase
+      const newPhotos = [url, ...rest]
+      const { error } = await supabase
         .from('profiles')
-        .update({ photos: [url, ...rest] } as any)
+        .update({ photos: newPhotos } as any)
         .eq('clerk_id', user.id)
+
+      if (error) {
+        console.error('DB update error (avatar):', error)
+        setUploadError('Foto subida pero no se pudo guardar en el perfil.')
+      } else {
+        setAvatarUrl(url)
+        await refreshProfile()
+      }
     }
     setUploadingAvatar(false)
   }
@@ -79,13 +104,25 @@ export function Profile() {
     if (!file || !user) return
     e.target.value = ''
     setUploadingCover(true)
+
     const url = await uploadToStorage(file, 'cover')
     if (url) {
-      setCoverUrl(url)
-      await supabase
+      const { error } = await supabase
         .from('profiles')
         .update({ cover_photo: url } as any)
         .eq('clerk_id', user.id)
+
+      if (error) {
+        console.error('DB update error (cover):', error)
+        if (error.message?.includes('cover_photo') || error.message?.includes('column')) {
+          setUploadError('Falta columna cover_photo. Ejecuta en Supabase SQL: ALTER TABLE profiles ADD COLUMN IF NOT EXISTS cover_photo text;')
+        } else {
+          setUploadError('Foto subida pero no se pudo guardar en el perfil.')
+        }
+      } else {
+        setCoverUrl(url)
+        await refreshProfile()
+      }
     }
     setUploadingCover(false)
   }
@@ -93,10 +130,13 @@ export function Profile() {
   const saveBio = async () => {
     if (!user) return
     setSavingBio(true)
-    await supabase
+    const { error } = await supabase
       .from('profiles')
       .update({ bio } as any)
       .eq('clerk_id', user.id)
+    if (!error) {
+      await refreshProfile()
+    }
     setSavingBio(false)
     setEditBio(false)
   }
@@ -120,33 +160,25 @@ export function Profile() {
 
   return (
     <div className="min-h-dvh bg-brand-dark pb-24">
-      {/* Hidden file inputs */}
-      <input
-        ref={avatarInputRef}
-        type="file"
-        accept="image/*"
-        className="hidden"
-        onChange={handleAvatarFile}
-      />
-      <input
-        ref={coverInputRef}
-        type="file"
-        accept="image/*"
-        className="hidden"
-        onChange={handleCoverFile}
-      />
+      <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarFile} />
+      <input ref={coverInputRef} type="file" accept="image/*" className="hidden" onChange={handleCoverFile} />
 
       {/* Header */}
       <div className="relative">
         {/* Banner / Cover */}
         <button
-          onClick={() => coverInputRef.current?.click()}
+          onClick={() => { setUploadError(''); coverInputRef.current?.click() }}
           disabled={uploadingCover}
           className="w-full h-36 relative overflow-hidden block cursor-pointer group"
           aria-label="Cambiar foto de portada"
         >
           {coverUrl ? (
-            <img src={coverUrl} alt="Portada" className="w-full h-full object-cover" />
+            <img
+              src={coverUrl}
+              alt="Portada"
+              className="w-full h-full object-cover"
+              onError={() => setCoverUrl('')}
+            />
           ) : (
             <>
               <div className="absolute inset-0"
@@ -155,7 +187,6 @@ export function Profile() {
                 style={{ background: 'radial-gradient(circle at 30% 50%, rgba(232,25,44,0.2), transparent 60%)' }} />
             </>
           )}
-          {/* Overlay with camera icon */}
           <div className="absolute inset-0 flex items-center justify-center bg-black/30 group-active:bg-black/50 transition-colors">
             {uploadingCover ? (
               <Loader2 size={24} className="text-white animate-spin" />
@@ -164,7 +195,9 @@ export function Profile() {
                 <div className="w-10 h-10 rounded-full bg-black/40 border border-white/20 flex items-center justify-center">
                   <Camera size={18} className="text-white" />
                 </div>
-                <span className="text-white/60 text-[10px]">Cambiar portada</span>
+                <span className="text-white/60 text-[10px]">
+                  {coverUrl ? 'Cambiar portada' : 'Agregar portada'}
+                </span>
               </div>
             )}
           </div>
@@ -175,15 +208,22 @@ export function Profile() {
           <div className="relative">
             <div className="w-24 h-24 rounded-2xl overflow-hidden border-4 border-brand-dark glow-red bg-white/10">
               {avatarUrl ? (
-                <img src={avatarUrl} alt="Tu foto" className="w-full h-full object-cover" />
+                <img
+                  src={avatarUrl}
+                  alt="Tu foto"
+                  className="w-full h-full object-cover"
+                  onError={() => setAvatarUrl('')}
+                />
               ) : (
-                <div className="w-full h-full bg-white/10" />
+                <div className="w-full h-full flex items-center justify-center bg-brand-red/10">
+                  <Camera size={24} className="text-white/20" />
+                </div>
               )}
             </div>
             <button
-              onClick={() => avatarInputRef.current?.click()}
+              onClick={() => { setUploadError(''); avatarInputRef.current?.click() }}
               disabled={uploadingAvatar}
-              className="absolute -bottom-1 -right-1 w-8 h-8 rounded-xl flex items-center justify-center cursor-pointer shadow-lg"
+              className="absolute -bottom-1 -right-1 w-8 h-8 rounded-xl flex items-center justify-center cursor-pointer shadow-lg disabled:opacity-60"
               style={{ background: 'linear-gradient(135deg, #E8192C, #E91E8C)' }}
               aria-label="Cambiar foto de perfil"
             >
@@ -197,6 +237,20 @@ export function Profile() {
       </div>
 
       <div className="px-5 pt-16 space-y-5">
+
+        {/* Error banner */}
+        {uploadError && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex items-start gap-2.5 p-3 rounded-2xl"
+            style={{ background: 'rgba(232,25,44,0.1)', border: '1px solid rgba(232,25,44,0.3)' }}
+          >
+            <AlertCircle size={16} className="text-brand-red flex-shrink-0 mt-0.5" />
+            <p className="text-red-300 text-xs leading-relaxed">{uploadError}</p>
+          </motion.div>
+        )}
+
         {/* Name */}
         <div>
           <div className="flex items-center gap-2 flex-wrap">
@@ -223,7 +277,6 @@ export function Profile() {
             <button
               onClick={() => setEditBio(!editBio)}
               className="text-white/30 hover:text-white transition-colors cursor-pointer flex-shrink-0"
-              aria-label="Editar bio"
             >
               <Edit2 size={14} />
             </button>
@@ -271,13 +324,8 @@ export function Profile() {
                   key={mode.key}
                   whileTap={{ scale: 0.95 }}
                   onClick={() => toggleMode(mode.key)}
-                  className={`flex items-center gap-2.5 p-3 rounded-2xl transition-all cursor-pointer text-left ${
-                    active ? 'border' : 'card-dark'
-                  }`}
-                  style={active ? {
-                    background: `${mode.color}15`,
-                    borderColor: `${mode.color}40`,
-                  } : {}}
+                  className={`flex items-center gap-2.5 p-3 rounded-2xl transition-all cursor-pointer text-left ${active ? 'border' : 'card-dark'}`}
+                  style={active ? { background: `${mode.color}15`, borderColor: `${mode.color}40` } : {}}
                 >
                   <span className="text-xl">{mode.emoji}</span>
                   <span className={`text-sm font-medium ${active ? 'text-white' : 'text-white/50'}`}>
@@ -294,11 +342,7 @@ export function Profile() {
 
         {/* Stats */}
         <div className="grid grid-cols-3 gap-3">
-          {[
-            { label: 'Likes', value: '48' },
-            { label: 'Matches', value: '12' },
-            { label: 'Chats', value: '7' },
-          ].map((stat) => (
+          {[{ label: 'Likes', value: '48' }, { label: 'Matches', value: '12' }, { label: 'Chats', value: '7' }].map((stat) => (
             <div key={stat.label} className="card-dark p-3 text-center">
               <p className="font-display text-2xl font-black text-gradient">{stat.value}</p>
               <p className="text-white/40 text-xs">{stat.label}</p>
@@ -315,9 +359,7 @@ export function Profile() {
           ].map(({ icon: Icon, label }, i) => (
             <button
               key={label}
-              className={`w-full flex items-center gap-3 px-4 py-4 text-white/70 hover:text-white hover:bg-white/5 transition-all cursor-pointer ${
-                i > 0 ? 'border-t border-white/5' : ''
-              }`}
+              className={`w-full flex items-center gap-3 px-4 py-4 text-white/70 hover:text-white hover:bg-white/5 transition-all cursor-pointer ${i > 0 ? 'border-t border-white/5' : ''}`}
             >
               <Icon size={16} />
               <span className="flex-1 text-sm text-left">{label}</span>
